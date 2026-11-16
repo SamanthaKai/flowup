@@ -72,6 +72,17 @@ def require_login():
     return user, None
 
 
+@app.route("/api/health")
+def health():
+    """Uptime check. Touches the DB so pings also keep Supabase from idling out."""
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify({"ok": True, "db": "up"})
+    except Exception:
+        db.session.rollback()
+        return jsonify({"ok": False, "db": "down"}), 503
+
+
 # ---------- auth & account ----------
 
 @app.route("/api/auth/signup", methods=["POST"])
