@@ -21,6 +21,18 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
 )
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secure")
 
+if app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql"):
+    # Supabase's transaction pooler (port 6543) can't keep server-side prepared
+    # statements; pre_ping drops connections that went stale between
+    # serverless invocations.
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {"prepare_threshold": None},
+        "pool_pre_ping": True,
+    }
+
+if os.environ.get("VERCEL"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+
 db.init_app(app)
 
 # create_all() never alters existing tables, so add columns introduced after

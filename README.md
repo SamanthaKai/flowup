@@ -56,15 +56,19 @@ cd frontend && npm run build     # outputs frontend/dist
 cd ../backend && gunicorn app:app
 ```
 
-## Deploying (Render, free tier)
+## Deploying (Vercel, free Hobby plan)
 
-1. Push this project to GitHub.
-2. Render → New → Web Service → connect the repo.
-3. Settings:
-   - **Build command**: `pip install -r backend/requirements.txt && npm --prefix frontend install && npm --prefix frontend run build`
-   - **Start command**: `cd backend && gunicorn app:app`
-   - **Env vars**: `DATABASE_URL` (Supabase connection string), `SECRET_KEY` (any random string)
-4. Render's free web service spins down after ~15 min idle; the first request after that takes ~30-50s to wake up.
+Live at https://flowup-one.vercel.app. Vercel runs the Flask app as a Python
+serverless function (`api/index.py` imports `backend/app.py`) and serves the
+Vite build as static files, so there is no sleeping server and no wake-up screen.
+
+1. `npx vercel login`, then `npx vercel link --project flowup` from the repo root.
+2. Add `DATABASE_URL` and `SECRET_KEY` as Production env vars (`npx vercel env add NAME production`).
+3. `npx vercel deploy --prod`.
+
+`vercel.json` pins the function to `dub1` (next to the Supabase eu-west-1 DB) and
+runs a daily cron against `/api/health`, which queries the DB so the free
+Supabase project never pauses from inactivity.
 
 ## API reference
 
