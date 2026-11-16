@@ -1,8 +1,10 @@
 import os
 import time
+from datetime import date, datetime, timezone
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory, session
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -11,6 +13,7 @@ from models import Task, User, db
 load_dotenv()
 
 ALLOWED_STATUSES = {"todo", "in_progress", "done"}
+ALLOWED_PRIORITIES = {"low", "medium", "high"}
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
@@ -19,10 +22,35 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secure")
 
 db.init_app(app)
+
+# create_all() never alters existing tables, so add columns introduced after
+# the first deploy. Small enough that a migration framework isn't worth it.
+NEW_COLUMNS = {
+    "user": {"name": "VARCHAR(120)"},
+    "task": {
+        "description": "TEXT",
+        "priority": "VARCHAR(10) DEFAULT 'medium'",
+        "due_date": "DATE",
+        "completed_at": "TIMESTAMP",
+    },
+}
+
+
+def add_missing_columns():
+    insp = inspect(db.engine)
+    with db.engine.begin() as conn:
+        for table, cols in NEW_COLUMNS.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for col, ddl in cols.items():
+                if col not in existing:
+                    conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {col} {ddl}'))
+
+
 with app.app_context():
     for attempt in range(5):
         try:
             db.create_all()
+            add_missing_columns()
             break
         except OperationalError:
             if attempt == 4:
@@ -43,6 +71,8 @@ def require_login():
         return None, (jsonify({"error": "Not authenticated"}), 401)
     return user, None
 
+
+# ---------- auth & account ----------
 
 @app.route("/api/auth/signup", methods=["POST"])
 def signup():
@@ -92,6 +122,85 @@ def me():
     return jsonify(user.to_dict())
 
 
+@app.route("/api/auth/me", methods=["PATCH"])
+def update_me():
+    user, err = require_login()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    if "name" in data:
+        user.name = str(data["name"] or "").strip()[:120]
+    db.session.commit()
+    return jsonify(user.to_dict())
+
+
+@app.route("/api/auth/password", methods=["POST"])
+def change_password():
+    user, err = require_login()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    current = str(data.get("current_password", ""))
+    new = str(data.get("new_password", ""))
+    if not check_password_hash(user.password_hash, current):
+        return jsonify({"error": "Current password is incorrect"}), 400
+    if len(new) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+    user.password_hash = generate_password_hash(new)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me", methods=["DELETE"])
+def delete_me():
+    user, err = require_login()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    if not check_password_hash(user.password_hash, str(data.get("password", ""))):
+        return jsonify({"error": "Password is incorrect"}), 400
+    Task.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    session.clear()
+    return jsonify({"ok": True})
+
+
+# ---------- tasks ----------
+
+def apply_task_fields(task, data):
+    """Validate and copy editable fields from request data. Returns an error string or None."""
+    if "title" in data:
+        title = str(data["title"] or "").strip()
+        if not title:
+            return "Title cannot be empty"
+        task.title = title[:500]
+    if "description" in data:
+        task.description = str(data["description"] or "").strip()[:5000]
+    if "priority" in data:
+        if data["priority"] not in ALLOWED_PRIORITIES:
+            return "Invalid priority"
+        task.priority = data["priority"]
+    if "due_date" in data:
+        raw = data["due_date"]
+        if raw in (None, ""):
+            task.due_date = None
+        else:
+            try:
+                task.due_date = date.fromisoformat(str(raw))
+            except ValueError:
+                return "Invalid due date"
+    if "status" in data:
+        if data["status"] not in ALLOWED_STATUSES:
+            return "Invalid status"
+        if data["status"] == "done" and task.status != "done":
+            task.completed_at = datetime.now(timezone.utc)
+        elif data["status"] != "done":
+            task.completed_at = None
+        task.status = data["status"]
+    return None
+
+
 @app.route("/api/tasks", methods=["GET"])
 def list_tasks():
     user, err = require_login()
@@ -109,14 +218,26 @@ def create_task():
     if err:
         return err
     data = request.get_json(silent=True) or {}
-    title = str(data.get("title", "")).strip()
-    if not title:
+    if not str(data.get("title", "")).strip():
         return jsonify({"error": "Title is required"}), 400
 
-    task = Task(user_id=user.id, title=title[:500], status="todo")
+    task = Task(user_id=user.id, title="", status="todo", priority="medium")
+    error = apply_task_fields(task, data)
+    if error:
+        return jsonify({"error": error}), 400
     db.session.add(task)
     db.session.commit()
     return jsonify(task.to_dict()), 201
+
+
+@app.route("/api/tasks/completed", methods=["DELETE"])
+def clear_completed():
+    user, err = require_login()
+    if err:
+        return err
+    count = Task.query.filter_by(user_id=user.id, status="done").delete()
+    db.session.commit()
+    return jsonify({"deleted": count})
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
@@ -128,17 +249,10 @@ def update_task(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    data = request.get_json(silent=True) or {}
-    if "title" in data:
-        title = str(data["title"]).strip()
-        if not title:
-            return jsonify({"error": "Title cannot be empty"}), 400
-        task.title = title[:500]
-    if "status" in data:
-        if data["status"] not in ALLOWED_STATUSES:
-            return jsonify({"error": "Invalid status"}), 400
-        task.status = data["status"]
-
+    error = apply_task_fields(task, request.get_json(silent=True) or {})
+    if error:
+        db.session.rollback()
+        return jsonify({"error": error}), 400
     db.session.commit()
     return jsonify(task.to_dict())
 

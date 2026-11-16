@@ -1,105 +1,120 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import { useMemo, useState } from "react";
+import TaskCard from "../components/TaskCard";
+import TaskModal from "../components/TaskModal";
+import { PlusIcon, SearchIcon } from "../icons";
+import { PRIORITIES, STATUSES, isOverdue } from "../tasks";
 
-const COLUMNS = [
-  { key: "todo", label: "To Do", dot: "bg-fu-muted" },
-  { key: "in_progress", label: "In Progress", dot: "bg-fu-cyan" },
-  { key: "done", label: "Done", dot: "bg-fu-green" },
-];
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+const SORTS = {
+  created: { label: "Newest", fn: (a, b) => b.id - a.id },
+  due: {
+    label: "Due date",
+    fn: (a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"),
+  },
+  priority: { label: "Priority", fn: (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] },
+};
 
-export default function Board() {
-  const [tasks, setTasks] = useState([]);
-  const [newTitle, setNewTitle] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [dragTaskId, setDragTaskId] = useState(null);
+const control =
+  "px-3 py-2.5 rounded-xl bg-fu-surface border border-fu-border text-fu-text text-sm outline-none focus:border-fu-cyan/60 transition";
+
+export default function Board({ store }) {
+  const { tasks, loading, error, createTask, updateTask, deleteTask } = store;
+  const [quickTitle, setQuickTitle] = useState("");
+  const [query, setQuery] = useState("");
+  const [priority, setPriority] = useState("all");
+  const [onlyOverdue, setOnlyOverdue] = useState(false);
+  const [sort, setSort] = useState("created");
+  const [modal, setModal] = useState(null); // { task } | { status }
+  const [dragId, setDragId] = useState(null);
   const [dragOverCol, setDragOverCol] = useState(null);
 
-  useEffect(() => {
-    apiFetch("/api/tasks")
-      .then(setTasks)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tasks
+      .filter((t) => priority === "all" || t.priority === priority)
+      .filter((t) => !onlyOverdue || isOverdue(t))
+      .filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+      .sort(SORTS[sort].fn);
+  }, [tasks, query, priority, onlyOverdue, sort]);
 
-  async function addTask(e) {
+  const filtering = query || priority !== "all" || onlyOverdue;
+
+  async function quickAdd(e) {
     e.preventDefault();
-    const title = newTitle.trim();
+    const title = quickTitle.trim();
     if (!title) return;
-    setNewTitle("");
-    try {
-      const task = await apiFetch("/api/tasks", {
-        method: "POST",
-        body: JSON.stringify({ title }),
-      });
-      setTasks((prev) => [...prev, task]);
-    } catch (err) {
-      setError(err.message);
-    }
+    setQuickTitle("");
+    await createTask({ title }).catch(() => {});
   }
 
-  async function moveTask(task, status) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, status } : t))
-    );
-    try {
-      const updated = await apiFetch(`/api/tasks/${task.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    } catch (err) {
-      setError(err.message);
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
-      );
-    }
-  }
-
-  async function deleteTask(task) {
-    try {
-      await apiFetch(`/api/tasks/${task.id}`, { method: "DELETE" });
-      setTasks((prev) => prev.filter((t) => t.id !== task.id));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  function handleDrop(e, columnKey) {
+  function handleDrop(e, status) {
     e.preventDefault();
     setDragOverCol(null);
     const id = Number(e.dataTransfer.getData("text/plain"));
     const task = tasks.find((t) => t.id === id);
-    if (task && task.status !== columnKey) moveTask(task, columnKey);
-    setDragTaskId(null);
+    if (task && task.status !== status) updateTask(id, { status }).catch(() => {});
+    setDragId(null);
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <form onSubmit={addTask} className="flex gap-3 mb-8">
-        <input
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="Add a task…"
-          className="flex-1 px-4 py-3 rounded-xl bg-fu-surface border border-fu-border text-fu-text placeholder:text-fu-muted text-sm outline-none focus:border-fu-cyan/60 focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)] transition"
-        />
+    <div className="max-w-6xl mx-auto">
+      <div className="flex items-end justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-fu-text">My Tasks</h1>
+          <p className="text-sm text-fu-muted mt-1">Drag cards between columns, or click one to edit.</p>
+        </div>
         <button
-          type="submit"
-          className="bg-fu-cyan text-fu-bg text-sm font-semibold px-6 py-3 rounded-xl hover:brightness-110 hover:shadow-[0_0_16px_rgba(34,211,238,0.35)] transition-all"
+          onClick={() => setModal({ status: "todo" })}
+          className="flex items-center gap-1.5 bg-fu-cyan text-fu-bg text-sm font-semibold px-4 py-2.5 rounded-xl hover:brightness-110 transition"
         >
-          Add
+          <PlusIcon width={16} height={16} /> New task
         </button>
+      </div>
+
+      <form onSubmit={quickAdd} className="mb-4">
+        <input
+          value={quickTitle}
+          onChange={(e) => setQuickTitle(e.target.value)}
+          placeholder="Quick add a task and press Enter…"
+          className={`${control} w-full px-4 py-3 placeholder:text-fu-muted focus:shadow-[0_0_0_3px_rgba(34,211,238,0.12)]`}
+        />
       </form>
+
+      <div className="flex flex-wrap gap-2.5 mb-6">
+        <div className="relative flex-1 min-w-[180px]">
+          <SearchIcon width={15} height={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-fu-muted" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search tasks"
+            className={`${control} w-full pl-9 placeholder:text-fu-muted`}
+          />
+        </div>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={control} aria-label="Filter by priority">
+          <option value="all">All priorities</option>
+          {PRIORITIES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className={control} aria-label="Sort">
+          {Object.entries(SORTS).map(([k, s]) => <option key={k} value={k}>Sort: {s.label}</option>)}
+        </select>
+        <button
+          type="button"
+          onClick={() => setOnlyOverdue((v) => !v)}
+          className={`${control} ${onlyOverdue ? "!border-fu-red/50 text-fu-red bg-fu-red/10" : "text-fu-muted hover:text-fu-text"}`}
+        >
+          Overdue only
+        </button>
+      </div>
 
       {error && <p className="text-sm text-fu-red mb-4">{error}</p>}
 
       {loading ? (
         <p className="text-fu-muted text-sm">Loading…</p>
       ) : (
-        <div className="grid sm:grid-cols-3 gap-5">
-          {COLUMNS.map((col) => {
-            const colTasks = tasks.filter((t) => t.status === col.key);
-            const isDragOver = dragOverCol === col.key;
+        <div className="grid md:grid-cols-3 gap-5">
+          {STATUSES.map((col) => {
+            const colTasks = visible.filter((t) => t.status === col.key);
+            const isOver = dragOverCol === col.key;
             return (
               <div
                 key={col.key}
@@ -107,62 +122,52 @@ export default function Board() {
                   e.preventDefault();
                   setDragOverCol(col.key);
                 }}
-                onDragLeave={() =>
-                  setDragOverCol((cur) => (cur === col.key ? null : cur))
-                }
+                onDragLeave={() => setDragOverCol((cur) => (cur === col.key ? null : cur))}
                 onDrop={(e) => handleDrop(e, col.key)}
                 className={`bg-fu-surface border rounded-2xl p-4 transition-colors ${
-                  isDragOver
-                    ? "border-fu-cyan/60 shadow-[0_0_0_3px_rgba(34,211,238,0.12)]"
-                    : "border-fu-border"
+                  isOver ? "border-fu-cyan/60 shadow-[0_0_0_3px_rgba(34,211,238,0.12)]" : "border-fu-border"
                 }`}
               >
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-fu-text mb-4 px-1">
-                  <span className={`w-1.5 h-1.5 rounded-full ${col.dot}`} />
-                  {col.label}
-                  <span className="text-fu-muted font-normal">
-                    ({colTasks.length})
-                  </span>
-                </h2>
+                <div className="flex items-center justify-between mb-4 px-1">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-fu-text">
+                    <span className={`w-1.5 h-1.5 rounded-full ${col.dot}`} />
+                    {col.label}
+                    <span className="text-fu-muted font-normal">({colTasks.length})</span>
+                  </h2>
+                  <button
+                    onClick={() => setModal({ status: col.key })}
+                    className="text-fu-muted hover:text-fu-cyan p-1 rounded-md hover:bg-white/5"
+                    aria-label={`Add task to ${col.label}`}
+                  >
+                    <PlusIcon width={16} height={16} />
+                  </button>
+                </div>
 
                 {colTasks.length === 0 ? (
                   <div className="border border-dashed border-fu-border rounded-xl py-8 text-center">
                     <p className="text-fu-muted text-xs">
-                      {isDragOver ? "Drop here" : "No tasks yet"}
+                      {isOver ? "Drop here" : filtering ? "No matching tasks" : "No tasks yet"}
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-2.5 min-h-[2rem]">
+                  <div className="space-y-2.5">
                     {colTasks.map((task) => (
-                      <div
+                      <TaskCard
                         key={task.id}
+                        task={task}
+                        onOpen={(t) => setModal({ task: t })}
                         draggable
+                        dimmed={dragId === task.id}
                         onDragStart={(e) => {
                           e.dataTransfer.setData("text/plain", String(task.id));
                           e.dataTransfer.effectAllowed = "move";
-                          setDragTaskId(task.id);
+                          setDragId(task.id);
                         }}
                         onDragEnd={() => {
-                          setDragTaskId(null);
+                          setDragId(null);
                           setDragOverCol(null);
                         }}
-                        className={`group bg-fu-bg border border-fu-border rounded-xl p-3.5 cursor-grab active:cursor-grabbing transition-all hover:border-fu-cyan/30 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.35)] ${
-                          dragTaskId === task.id ? "opacity-40" : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm text-fu-text break-words">
-                            {task.title}
-                          </p>
-                          <button
-                            onClick={() => deleteTask(task)}
-                            className="shrink-0 text-fu-muted hover:text-fu-red opacity-0 group-hover:opacity-100 transition-opacity"
-                            aria-label="Delete task"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
+                      />
                     ))}
                   </div>
                 )}
@@ -170,6 +175,16 @@ export default function Board() {
             );
           })}
         </div>
+      )}
+
+      {modal && (
+        <TaskModal
+          task={modal.task}
+          defaultStatus={modal.status}
+          onClose={() => setModal(null)}
+          onSave={(fields) => (modal.task ? updateTask(modal.task.id, fields) : createTask(fields))}
+          onDelete={modal.task ? () => deleteTask(modal.task.id) : undefined}
+        />
       )}
     </div>
   );

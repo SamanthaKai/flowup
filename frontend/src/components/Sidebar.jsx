@@ -1,17 +1,10 @@
-import {
-  AnalyticsIcon,
-  DashboardIcon,
-  ProfileIcon,
-  SettingsIcon,
-  TasksIcon,
-} from "../icons";
+import { AnalyticsIcon, DashboardIcon, ProfileIcon, TasksIcon } from "../icons";
 
-const NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard", Icon: DashboardIcon },
-  { key: "tasks", label: "My Tasks", Icon: TasksIcon },
-  { key: "analytics", label: "Analytics", Icon: AnalyticsIcon },
-  { key: "profile", label: "Profile", Icon: ProfileIcon },
-  { key: "settings", label: "Settings", Icon: SettingsIcon },
+export const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard", short: "Home", Icon: DashboardIcon },
+  { key: "tasks", label: "My Tasks", short: "Tasks", Icon: TasksIcon },
+  { key: "analytics", label: "Analytics", short: "Analytics", Icon: AnalyticsIcon },
+  { key: "account", label: "Account", short: "Account", Icon: ProfileIcon },
 ];
 
 export default function Sidebar({ active, onNavigate }) {
@@ -30,9 +23,7 @@ export default function Sidebar({ active, onNavigate }) {
                   : "text-fu-muted hover:bg-white/5 hover:text-fu-text"
               }`}
             >
-              <Icon
-                className={isActive ? "text-fu-cyan" : "text-fu-muted group-hover:text-fu-text"}
-              />
+              <Icon className={isActive ? "text-fu-cyan" : "text-fu-muted group-hover:text-fu-text"} />
               <span className="font-medium">{label}</span>
             </button>
           );

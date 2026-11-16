@@ -52,33 +52,22 @@ export const LogoutIcon = (p) => (
   </svg>
 );
 
-export const LockIcon = (p) => (
+export const PlusIcon = (p) => (
   <svg {...base} {...p}>
-    <rect x="5" y="10.5" width="14" height="9" rx="2.2" />
-    <path d="M7.5 10.5V7.8a4.5 4.5 0 0 1 9 0v2.7" />
+    <path d="M12 5v14M5 12h14" />
   </svg>
 );
 
-export const DatabaseIcon = (p) => (
+export const SearchIcon = (p) => (
   <svg {...base} {...p}>
-    <ellipse cx="12" cy="6" rx="7" ry="3" />
-    <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
-    <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.2-4.2" />
   </svg>
 );
 
-export const UserCheckIcon = (p) => (
+export const CalendarIcon = (p) => (
   <svg {...base} {...p}>
-    <circle cx="10" cy="8" r="3.3" />
-    <path d="M3.5 20c1.1-3.4 3.7-5.1 6.5-5.1" />
-    <path d="m14.5 15.5 2 2 3.5-3.5" />
-  </svg>
-);
-
-export const StackIcon = (p) => (
-  <svg {...base} {...p}>
-    <path d="m12 3 8 4.5-8 4.5-8-4.5Z" />
-    <path d="m4 12 8 4.5 8-4.5" />
-    <path d="m4 16.5 8 4.5 8-4.5" />
+    <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
   </svg>
 );

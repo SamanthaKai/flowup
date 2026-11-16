@@ -1,24 +1,39 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
+import { useTasks } from "./tasks";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import Dashboard from "./pages/Dashboard";
 import Board from "./pages/Board";
+import Analytics from "./pages/Analytics";
+import Account from "./pages/Account";
 import AppShell from "./components/AppShell";
-import ComingSoon from "./components/ComingSoon";
-import FeatureCards from "./components/FeatureCards";
-import TechBadges from "./components/TechBadges";
 
-const SECTION_LABELS = {
-  analytics: "Analytics",
-  profile: "Profile",
-  settings: "Settings",
-};
+function Workspace({ user, setUser, onLoggedOut }) {
+  const [section, setSection] = useState("dashboard");
+  const store = useTasks();
+
+  async function logout() {
+    await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    onLoggedOut();
+  }
+
+  return (
+    <AppShell user={user} onLogout={logout} active={section} onNavigate={setSection}>
+      {section === "dashboard" && <Dashboard store={store} user={user} onNavigate={setSection} />}
+      {section === "tasks" && <Board store={store} />}
+      {section === "analytics" && <Analytics store={store} />}
+      {section === "account" && (
+        <Account user={user} store={store} onUserChange={setUser} onDeleted={onLoggedOut} />
+      )}
+    </AppShell>
+  );
+}
 
 function App() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
   const [view, setView] = useState("login");
-  const [section, setSection] = useState("dashboard");
 
   useEffect(() => {
     apiFetch("/api/auth/me")
@@ -36,28 +51,16 @@ function App() {
   }
 
   if (user) {
-    const onLoggedOut = () => {
-      setUser(null);
-      setView("login");
-      setSection("dashboard");
-    };
-
     return (
-      <AppShell user={user} onLogout={onLoggedOut} active={section} onNavigate={setSection}>
-        {section === "dashboard" && (
-          <>
-            <Board />
-            <div className="max-w-5xl mx-auto">
-              <FeatureCards />
-              <TechBadges />
-            </div>
-          </>
-        )}
-        {section === "tasks" && <Board />}
-        {section !== "dashboard" && section !== "tasks" && (
-          <ComingSoon label={SECTION_LABELS[section]} />
-        )}
-      </AppShell>
+      <Workspace
+        key={user.id}
+        user={user}
+        setUser={setUser}
+        onLoggedOut={() => {
+          setUser(null);
+          setView("login");
+        }}
+      />
     );
   }
 

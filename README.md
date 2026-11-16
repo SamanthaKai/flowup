@@ -1,10 +1,13 @@
 # FlowUp — Full-Stack Portfolio Demo
 
-A small real full-stack task tracker: signup/login with hashed passwords
-and server-side sessions, a 3-column Kanban board (To Do / In Progress
-/ Done), and genuine per-user data persistence in Postgres. Built to
-prove the "React + Flask" claim with a working app that has a real
-database and real auth, not just a UI mockup.
+A real full-stack task manager built with React + Flask + Postgres:
+
+- **Auth & account**: signup/login with hashed passwords and server-side sessions; edit display name, change password, delete account.
+- **Kanban board**: To Do / In Progress / Done with drag-and-drop, quick add, and a full task editor (description, priority, due date).
+- **Search, filter, sort**: by text, priority, overdue, due date.
+- **Dashboard**: open / overdue / completed-this-week stats, tasks due in the next 7 days, high-priority list with one-click complete.
+- **Analytics**: completions per day (last 14 days), average time to finish, breakdowns by status and priority.
+- **Per-user persistence** in Postgres (Supabase), scoped so users only ever see their own data.
 
 ## Stack
 
@@ -32,7 +35,7 @@ npm install
 npm run dev                     # http://localhost:5173
 ```
 
-Tables are created automatically via `db.create_all()` on startup — no migration framework needed at this scale.
+Tables are created automatically via `db.create_all()` on startup; columns added in later versions are added in place by `add_missing_columns()` in `app.py`. No migration framework needed at this scale.
 
 ## Database: Supabase (free, no card required)
 
